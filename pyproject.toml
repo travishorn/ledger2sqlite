@@ -1,7 +1,8 @@
 [project]
 name = "ledger2sqlite"
 version = "0.1.0"
-description = "Add your description here"
+description = "Build a normalized SQLite database from hledger journals"
 readme = "README.md"
 requires-python = ">=3.14.3"
 dependencies = []
+

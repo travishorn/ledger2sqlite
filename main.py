@@ -1,6 +1,5 @@
-def main():
-    print("Hello from ledger2sqlite!")
+from cli import main
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
