@@ -73,7 +73,7 @@ def _json_value(value: Any) -> Any:
 
 @mcp.tool()
 def query_ledger(sql: str, limit: int = 100) -> str:
-    """Run a read-only SQL query against the personal-finance ledger database.
+    """Run a read-only SQL query against a ledger database.
 
     Query tables such as transactions, postings, accounts, commodities, and
     market_prices, or views v_register, v_account_balances, and
@@ -94,8 +94,9 @@ def query_ledger(sql: str, limit: int = 100) -> str:
     if not sql.strip() or "\x00" in sql:
         raise ValueError("sql must contain one non-empty read-only SELECT query")
 
-    # Use a query-only SQLite connection and EXPLAIN first, which rejects writes,
-    # multiple statements, and unsupported SQL before executing the query.
+    # Use a query-only SQLite connection and EXPLAIN first, which rejects
+    # writes, multiple statements, and unsupported SQL before executing the
+    # query.
     with closing(_open_readonly_database()) as connection:
         connection.set_authorizer(_read_authorizer)
         try:

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mcp_ledger import get_ledger_context, query_ledger
+from mcp_ledger2sqlite import get_ledger_context, query_ledger
 
 
 class LedgerMcpTests(unittest.TestCase):
