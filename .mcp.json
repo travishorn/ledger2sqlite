@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "ledger2sqlite": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "mcp_ledger.py"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

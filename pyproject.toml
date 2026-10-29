@@ -4,5 +4,7 @@ version = "0.1.0"
 description = "Build a normalized SQLite database from hledger journals"
 readme = "README.md"
 requires-python = ">=3.14.3"
-dependencies = []
+dependencies = [
+	"mcp>=1.26.0,<2",
+]
 

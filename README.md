@@ -22,6 +22,18 @@ commodity postings, exact decimal strings and scaled integers, account hierarchy
 historical prices, and the `v_register`, `v_account_balances`, and
 `v_postings_valued` views.
 
+## MCP server
+
+The repository's `.mcp.json` configures a stdio MCP server launched with
+`uv run mcp_ledger.py`. It provides `query_ledger` for read-only SQL queries and
+`get_ledger_context` for annotated schema guidance and the saved SQL recipes.
+The query tool returns JSON rows and limits results to 1,000 rows. By default it
+opens `journal.db` in the current working directory; set
+`LEDGER2SQLITE_DATABASE` to use a different database path.
+
+The server requires the MCP SDK, installed from the project dependencies by
+`uv sync`.
+
 ## Tests
 
-Run the standard-library test suite with `uv run python -m unittest discover -s tests`.
+Run the tests with `uv run python -m unittest discover -s tests`.
