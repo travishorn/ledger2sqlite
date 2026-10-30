@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import os
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Tuple
 
 from mcp.server.fastmcp import FastMCP
 
@@ -100,6 +101,19 @@ def _read_authorizer(
         return sqlite3.SQLITE_DENY
     return sqlite3.SQLITE_OK
 
+def _parse_recipe_header(sql_text: str) -> Tuple[str, str]:
+    """Extract (title, summary) from the leading /* ... */ comment block."""
+    match = re.match(r"^\s*/\*(.*?)\*/", sql_text, re.DOTALL)
+    if not match:
+        return ("Untitled", "")
+
+    lines = [line.strip() for line in match.group(1).strip().splitlines()]
+    non_empty = [line for line in lines if line]
+
+    title = non_empty[0] if non_empty else "Untitled"
+    # Take the next sentence or paragraph as the summary
+    summary = " ".join(non_empty[1:3]) if len(non_empty) > 1 else ""
+    return title, summary
 
 def _json_value(value: Any) -> Any:
     if isinstance(value, bytes):
@@ -228,31 +242,52 @@ def set_ledger_database(database: str) -> str:
 
 @mcp.tool()
 def get_ledger_context() -> str:
-    """Return concise database schema guidance and available saved SQL recipes."""
+    """Return database schema, query guidelines, and a catalog of available SQL recipes."""
     root = Path(__file__).resolve().parent
     recipes_dir = root / "recipes"
-    recipe_files = sorted(recipes_dir.glob("*.sql"))
-    recipes = {
-        path.stem: path.read_text(encoding="utf-8")
-        for path in recipe_files
-        if path.name != "schema.sql"
-    }
+
+    catalog: Dict[str, Dict[str, str]] = {}
+    for path in sorted(recipes_dir.glob("*.sql")):
+        if path.name == "schema.sql":
+            continue
+        text = path.read_text(encoding="utf-8")
+        title, summary = _parse_recipe_header(text)
+        catalog[path.stem] = {
+            "title": title,
+            "summary": summary,
+        }
+
     schema_path = recipes_dir / "schema.sql"
     schema = schema_path.read_text(encoding="utf-8") if schema_path.exists() else ""
+
     return json.dumps(
         {
             "database": str(_database_path()),
             "schema_guidance": schema,
-            "recipes": recipes,
+            "recipes_catalog": catalog,
             "query_rules": [
                 "Use query_ledger for one read-only SELECT/CTE query at a time.",
                 "Filter or group by commodity before adding amount_real or amount_int.",
                 "Use v_postings_valued or the recipes' as-of price lookup for valuation.",
                 "For net worth, value current asset/liability balances as of the chosen date; do not sum historical posting market values.",
+                "To inspect a recipe before running or modifying it, call get_recipe(recipe_name).",
             ],
         },
         ensure_ascii=False,
     )
+
+
+@mcp.tool()
+def get_recipe(recipe_name: str) -> str:
+    """Retrieve the full SQL query template for a given recipe name from the catalog."""
+    root = Path(__file__).resolve().parent
+    recipe_file = (root / "recipes" / f"{recipe_name}.sql").resolve()
+
+    # Safety check to stay inside recipes directory
+    if not recipe_file.is_relative_to(root / "recipes") or not recipe_file.exists():
+        return f"Error: Recipe '{recipe_name}' not found."
+
+    return recipe_file.read_text(encoding="utf-8")
 
 
 if __name__ == "__main__":
