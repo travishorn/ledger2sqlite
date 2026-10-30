@@ -74,6 +74,7 @@ CREATE TABLE transactions (
     code TEXT, -- Check number, invoice code, or external transfer reference
     payee TEXT, -- Extracted transaction counterparty or payee name
     narration TEXT, -- Extracted note, memo, or secondary description
+    comment TEXT, -- Full hledger transaction comment, separate from description/narration
     tags TEXT CHECK (tags IS NULL OR (json_valid(tags) AND json_type(tags) = 'object')) -- JSON key-value dictionary of transaction-level metadata
 );
 
@@ -102,6 +103,7 @@ CREATE TABLE postings (
     cost_amount_str TEXT, -- Explicit unit or total transaction cost string if conversion occurred
     cost_commodity_id INTEGER REFERENCES commodities(id) ON DELETE RESTRICT, -- Foreign key referencing commodity used for cost basis
     status TEXT NOT NULL, -- Posting-level status override ('cleared', 'pending', or 'unmarked')
+    comment TEXT, -- Full hledger posting comment
     tags TEXT CHECK (tags IS NULL OR (json_valid(tags) AND json_type(tags) = 'object')) -- JSON key-value dictionary of posting-level metadata
 );
 

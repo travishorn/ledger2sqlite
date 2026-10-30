@@ -43,6 +43,7 @@ CREATE TABLE transactions (
     code TEXT,
     payee TEXT,
     narration TEXT,
+    comment TEXT,
     tags TEXT CHECK (tags IS NULL OR (json_valid(tags) AND json_type(tags) = 'object'))
 );
 
@@ -57,6 +58,7 @@ CREATE TABLE postings (
     cost_amount_str TEXT,
     cost_commodity_id INTEGER REFERENCES commodities(id) ON DELETE RESTRICT,
     status TEXT NOT NULL,
+    comment TEXT,
     tags TEXT CHECK (tags IS NULL OR (json_valid(tags) AND json_type(tags) = 'object'))
 );
 
@@ -77,7 +79,8 @@ CREATE INDEX idx_accounts_root ON accounts(root_type, depth);
 
 CREATE VIEW v_register AS
 SELECT t.date, t.effective_date, t.status AS tx_status, t.code, t.payee,
-       t.narration, a.name AS account, a.root_type, p.amount_str AS amount,
+    t.narration, t.comment AS tx_comment, p.comment AS posting_comment,
+    a.name AS account, a.root_type, p.amount_str AS amount,
        p.amount_real, c.symbol AS commodity, p.tags AS posting_tags,
        t.tags AS tx_tags
 FROM postings p
@@ -225,8 +228,8 @@ def populate_database(
     for transaction in transaction_list:
         _validate_tags(transaction.tags, "transaction")
         cursor = connection.execute(
-            "INSERT INTO transactions(hledger_index, date, effective_date, status, code, payee, narration, tags) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO transactions(hledger_index, date, effective_date, status, code, payee, narration, comment, tags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 transaction.hledger_index,
                 transaction.date,
@@ -235,6 +238,7 @@ def populate_database(
                 transaction.code,
                 transaction.payee,
                 transaction.narration,
+                transaction.comment,
                 transaction.tags,
             ),
         )
@@ -250,7 +254,8 @@ def populate_database(
                 )
             connection.execute(
                 "INSERT INTO postings(transaction_id, account_id, amount_int, amount_str, commodity_id, "
-                "cost_amount_str, cost_commodity_id, status, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "cost_amount_str, cost_commodity_id, status, comment, tags) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     transaction_id,
                     _get_or_create_account(connection, posting.account),
@@ -260,6 +265,7 @@ def populate_database(
                     posting.cost_amount_str,
                     cost_commodity_id,
                     posting.status,
+                    posting.comment,
                     posting.tags,
                 ),
             )

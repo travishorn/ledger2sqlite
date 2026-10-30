@@ -21,6 +21,7 @@ class PostingRecord:
     cost_commodity: str | None
     status: str
     tags: str | None
+    comment: str | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class TransactionRecord:
     narration: str | None
     tags: str | None
     postings: list[PostingRecord]
+    comment: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,7 @@ def _posting_records(raw_posting: dict[str, Any]) -> list[PostingRecord]:
                 cost_commodity=cost_commodity,
                 status=str(raw_posting.get("pstatus") or "Unmarked").lower(),
                 tags=_tag_json(raw_posting.get("ptags")),
+                comment=str(raw_posting.get("pcomment") or "").strip() or None,
             )
         )
     return result
@@ -135,6 +138,7 @@ def transform_transactions(raw_transactions: list[dict[str, Any]]) -> tuple[list
                 narration=narration,
                 tags=_tag_json(raw.get("ttags")),
                 postings=postings,
+                comment=str(raw.get("tcomment") or "").strip() or None,
             )
         )
     return transactions, precision

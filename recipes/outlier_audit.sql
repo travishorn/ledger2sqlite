@@ -1,8 +1,8 @@
 /*
 Outlier Audit
 
-What were the largest individual transactions this month, and what tags were
-attached?
+What were the largest individual expenses this month, what tags were attached,
+and what notes/comments explain them?
 
 Quickly scan for unauthorized charges, forgot-to-cancel subscriptions, or
 misclassified expenses before closing the month.
@@ -13,8 +13,11 @@ WITH params AS (
 SELECT
     t.date,
     t.payee,
+    t.narration,
     a.name AS account,
     ROUND(v.market_value, 2) AS amount_usd,
+    t.comment AS tx_comment,
+    p.comment AS posting_comment,
     t.tags AS tx_tags,
     p.tags AS posting_tags
 FROM v_postings_valued v

@@ -170,6 +170,46 @@ class LedgerMcpTests(unittest.TestCase):
         latest_income_month = next(row for row in income_rows if row["month"] == previous_month_end.strftime("%Y-%m"))
         self.assertEqual(latest_income_month["income"], 50)
 
+    def test_comment_recipes_expose_transaction_and_posting_notes(self) -> None:
+        recipe_directory = Path(__file__).resolve().parents[1] / "recipes"
+        transaction = TransactionRecord(
+            hledger_index=1,
+            date="2026-07-23",
+            effective_date=None,
+            status="cleared",
+            code=None,
+            payee="Amazon",
+            narration=None,
+            tags=None,
+            postings=[
+                PostingRecord("Expenses:Home:Maintenance", Decimal("27.15"), "27.15", "$", None, None, "unmarked", None, "4 rolls teflon tape"),
+                PostingRecord("Expenses:Car:Maintenance", Decimal("12.99"), "12.99", "$", None, None, "unmarked", None, "Spark plug"),
+                PostingRecord("Assets:Cash", Decimal("-40.14"), "-40.14", "$", None, None, "unmarked", None, None),
+            ],
+            comment="Stuff for house and car",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "ledger.db"
+            build_database(database, [transaction], [], {"$": 2})
+            search_sql = (recipe_directory / "comment_search.sql").read_text(encoding="utf-8")
+            with patch.dict(os.environ, {"LEDGER2SQLITE_DATABASE": str(database)}):
+                comment_result = json.loads(
+                    query_ledger(search_sql)
+                )
+                transaction_comment_result = json.loads(
+                    query_ledger(search_sql.replace("'%teflon%'", "'%Stuff%'") )
+                )
+                audit_result = json.loads(
+                    query_ledger((recipe_directory / "outlier_audit.sql").read_text(encoding="utf-8"))
+                )
+
+        self.assertEqual(len(comment_result["rows"]), 1)
+        self.assertEqual(comment_result["rows"][0]["posting_comment"], "4 rolls teflon tape")
+        self.assertEqual(len(transaction_comment_result["rows"]), 3)
+        self.assertTrue(all(row["tx_comment"] == "Stuff for house and car" for row in transaction_comment_result["rows"]))
+        self.assertIn("tx_comment", audit_result["columns"])
+        self.assertIn("posting_comment", audit_result["columns"])
+
     def test_context_includes_schema_and_recipes(self) -> None:
         context = json.loads(get_ledger_context())
         self.assertIn("CREATE TABLE accounts", context["schema_guidance"])

@@ -60,6 +60,108 @@ class Ledger2SQLiteTests(unittest.TestCase):
         self.assertEqual(transaction.postings[0].tags, '{"receipt": "yes"}')
         self.assertEqual(precision, {"$": 2})
 
+    def test_transform_preserves_transaction_and_posting_comments(self) -> None:
+        raw = [
+            {
+                "tindex": 1,
+                "tdate": "2026-07-23",
+                "tdescription": "Amazon",
+                "tcomment": "Stuff for house and car\n",
+                "tpostings": [
+                    {
+                        "paccount": "Expenses:Home:Maintenance",
+                        "pamount": [
+                            {
+                                "acommodity": "$",
+                                "aquantity": {"decimalMantissa": 2715, "decimalPlaces": 2},
+                            }
+                        ],
+                        "pcomment": "4 rolls teflon tape, 92oz shower cleaner\n",
+                    },
+                    {
+                        "paccount": "Expenses:Car:Maintenance",
+                        "pamount": [
+                            {
+                                "acommodity": "$",
+                                "aquantity": {"decimalMantissa": 1299, "decimalPlaces": 2},
+                            }
+                        ],
+                        "pcomment": "Spark plug\n",
+                    },
+                ],
+            }
+        ]
+
+        transactions, _ = transform_transactions(raw)
+
+        self.assertEqual(transactions[0].comment, "Stuff for house and car")
+        self.assertEqual(
+            [posting.comment for posting in transactions[0].postings],
+            ["4 rolls teflon tape, 92oz shower cleaner", "Spark plug"],
+        )
+
+    def test_database_persists_comments_and_exposes_them_in_register(self) -> None:
+        transaction = TransactionRecord(
+            hledger_index=1,
+            date="2026-07-23",
+            effective_date=None,
+            status="cleared",
+            code=None,
+            payee="Amazon",
+            narration=None,
+            tags=None,
+            postings=[
+                PostingRecord(
+                    "Expenses:Home:Maintenance",
+                    Decimal("27.15"),
+                    "27.15",
+                    "$",
+                    None,
+                    None,
+                    "unmarked",
+                    None,
+                    "4 rolls teflon tape, 92oz shower cleaner",
+                ),
+                PostingRecord(
+                    "Assets:Cash",
+                    Decimal("-27.15"),
+                    "-27.15",
+                    "$",
+                    None,
+                    None,
+                    "unmarked",
+                    None,
+                    None,
+                ),
+            ],
+            comment="Stuff for house and car",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "journal.db"
+            build_database(output, [transaction], [], {"$": 2})
+            connection = sqlite3.connect(output)
+            try:
+                self.assertEqual(
+                    connection.execute("SELECT comment FROM transactions").fetchone()[0],
+                    "Stuff for house and car",
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT comment FROM postings WHERE account_id = "
+                        "(SELECT id FROM accounts WHERE name = 'Expenses:Home:Maintenance')"
+                    ).fetchone()[0],
+                    "4 rolls teflon tape, 92oz shower cleaner",
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT tx_comment, posting_comment FROM v_register "
+                        "WHERE account = 'Expenses:Home:Maintenance'"
+                    ).fetchone(),
+                    ("Stuff for house and car", "4 rolls teflon tape, 92oz shower cleaner"),
+                )
+            finally:
+                connection.close()
+
     def test_parse_prices_supports_adjacent_and_separate_quote(self) -> None:
         prices = parse_prices('P 2026-01-01 ABC $1.25\nP 2026-01-02 "XYZ Coin" 2.5 USD\n')
         self.assertEqual(
