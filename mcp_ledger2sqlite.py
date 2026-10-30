@@ -11,6 +11,10 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from db import build_database
+from extractor import extract_prices, extract_transactions
+from transformer import parse_prices, transform_transactions
+
 
 mcp = FastMCP("ledger2sqlite")
 DEFAULT_DATABASE = Path(os.environ.get("LEDGER2SQLITE_DATABASE", "journal.db"))
@@ -22,6 +26,37 @@ def _database_path() -> Path:
     if not path.is_absolute():
         path = Path.cwd() / path
     return path.resolve()
+
+
+def _resolve_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path.resolve()
+
+
+def _validate_ledger_database(path: Path) -> None:
+    if not path.is_file():
+        raise FileNotFoundError(f"Ledger database not found at {path}.")
+    connection = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True, timeout=5)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    except sqlite3.Error as exc:
+        raise ValueError(f"Could not read SQLite database at {path}: {exc}") from exc
+    finally:
+        connection.close()
+    required_tables = {"transactions", "postings", "accounts", "commodities", "market_prices"}
+    missing = required_tables - tables
+    if missing:
+        raise ValueError(
+            f"Database at {path} is not a ledger2sqlite database; missing tables: "
+            f"{', '.join(sorted(missing))}"
+        )
 
 
 def _open_readonly_database() -> sqlite3.Connection:
@@ -50,6 +85,7 @@ def _read_authorizer(
         sqlite3.SQLITE_SELECT,
         sqlite3.SQLITE_READ,
         sqlite3.SQLITE_FUNCTION,
+        sqlite3.SQLITE_RECURSIVE,
     }
     if action not in allowed_actions:
         return sqlite3.SQLITE_DENY
@@ -125,6 +161,69 @@ def query_ledger(sql: str, limit: int = 100) -> str:
         ],
     }
     return json.dumps(result, ensure_ascii=False, default=str)
+
+
+@mcp.tool()
+def convert_journal_to_sqlite(journal: str, output: str = "journal.db") -> str:
+    """Convert an hledger journal to SQLite and configure it for query_ledger.
+
+    Requires the hledger executable to be installed and available on PATH.
+    The output database is atomically replaced after a successful conversion.
+
+    Args:
+        journal: Path to the hledger journal file.
+        output: Destination SQLite path (defaults to ./journal.db).
+    """
+    journal_path = _resolve_path(journal)
+    output_path = _resolve_path(output)
+    if not journal_path.is_file():
+        raise FileNotFoundError(f"hledger journal not found at {journal_path}.")
+    if journal_path == output_path:
+        raise ValueError("output database path must not be the journal path")
+
+    raw_transactions = extract_transactions(journal_path)
+    transactions, precision = transform_transactions(raw_transactions)
+    prices = parse_prices(extract_prices(journal_path))
+    build_database(output_path, transactions, prices, precision)
+
+    # MCP calls run in this server process, so subsequent query_ledger calls
+    # use the newly built database without requiring a server restart.
+    os.environ["LEDGER2SQLITE_DATABASE"] = str(output_path)
+    return json.dumps(
+        {
+            "journal": str(journal_path),
+            "database": str(output_path),
+            "transaction_count": len(transactions),
+            "posting_count": sum(len(transaction.postings) for transaction in transactions),
+            "market_price_count": len(prices),
+            "configured_environment": "LEDGER2SQLITE_DATABASE",
+            "ready_for_query": True,
+        },
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool()
+def set_ledger_database(database: str) -> str:
+    """Configure query_ledger to use an existing ledger2sqlite database.
+
+    The environment variable is set in the running MCP server process, so it
+    applies to subsequent query_ledger calls without restarting the server.
+
+    Args:
+        database: Path to an existing ledger2sqlite SQLite database.
+    """
+    path = _resolve_path(database)
+    _validate_ledger_database(path)
+    os.environ["LEDGER2SQLITE_DATABASE"] = str(path)
+    return json.dumps(
+        {
+            "database": str(path),
+            "configured_environment": "LEDGER2SQLITE_DATABASE",
+            "ready_for_query": True,
+        },
+        ensure_ascii=False,
+    )
 
 
 @mcp.tool()
