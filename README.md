@@ -24,15 +24,15 @@ available on `PATH`.
 
 ## Recipes
 
-The `recipes/` directory includes some example queries you may find useful.
-There are monthly and yearly balance-sheet snapshots, monthly income, cash-flow
-and spending reports, emergency-runway, outlier analyses, and more.
+The `recipes/` directory includes some example queries you may find useful. They
+cover monthly & annual balance-sheet snapshots, cash flow, spending, emergency
+runway, outlier analyses, and more.
 
 ## MCP server
 
 As a bonus feature, this repository also implements an MCP server. It helps
 guide AI agents with `query_ledger` for read-only SQL queries and
-`get_ledger_context` for annotated schema guidance and the saved SQL recipes.
+`get_ledger_context` for query guidance, full schema, and recipe catalog.
 
 By default it opens `journal.db` in the current working directory; set
 `LEDGER2SQLITE_DATABASE` to use a different database path.

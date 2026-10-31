@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-import re
 import os
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -100,6 +100,7 @@ def _read_authorizer(
     }:
         return sqlite3.SQLITE_DENY
     return sqlite3.SQLITE_OK
+
 
 def _parse_recipe_header(sql_text: str) -> Tuple[str, str]:
     """Extract (title, summary) from the leading /* ... */ comment block."""
@@ -241,8 +242,11 @@ def set_ledger_database(database: str) -> str:
 
 
 @mcp.tool()
-def get_ledger_context() -> str:
-    """Return database schema, query guidelines, and a catalog of available SQL recipes."""
+def get_ledger_context(include_schema: bool = True) -> str:
+    """Return query guidelines and the recipe catalog, optionally including the full schema.
+
+    Set include_schema to false when only the recipe catalog and query guidance are needed.
+    """
     root = Path(__file__).resolve().parent
     recipes_dir = root / "recipes"
 
@@ -258,7 +262,11 @@ def get_ledger_context() -> str:
         }
 
     schema_path = recipes_dir / "schema.sql"
-    schema = schema_path.read_text(encoding="utf-8") if schema_path.exists() else ""
+    schema = (
+        schema_path.read_text(encoding="utf-8")
+        if include_schema and schema_path.exists()
+        else None
+    )
 
     return json.dumps(
         {

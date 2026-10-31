@@ -118,6 +118,8 @@ class LedgerMcpTests(unittest.TestCase):
             "monthly_cash_outflows_debt_service_6mo.sql",
             "monthly_income_analysis_6mo.sql",
             "yearly_balance_sheet_5y.sql",
+            "balance_sheet_year_over_year.sql",
+            "monthly_income_expense_12mo.sql",
         )
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "ledger.db"
@@ -157,9 +159,27 @@ class LedgerMcpTests(unittest.TestCase):
         self.assertEqual(
             len({row["month"] for row in results["monthly_balance_sheet_6mo.sql"]["rows"]}), 6
         )
+        yearly_rows = results["yearly_balance_sheet_5y.sql"]["rows"]
+        self.assertEqual(len({row["year"] for row in yearly_rows}), 6)
+        self.assertTrue(any(row["year"] == previous_month_end.isoformat() for row in yearly_rows))
+
+        balance_sheet_rows = results["balance_sheet_year_over_year.sql"]["rows"]
+        self.assertEqual({row["snapshot"] for row in balance_sheet_rows}, {"as_of", "prior_year"})
         self.assertEqual(
-            len({row["year"] for row in results["yearly_balance_sheet_5y.sql"]["rows"]}), 5
+            {row["snapshot"]: row["cutoff_date"] for row in balance_sheet_rows},
+            {"as_of": previous_month_end.isoformat(),
+             "prior_year": previous_month_end.replace(year=previous_month_end.year - 1).isoformat()},
         )
+
+        comparison_rows = results["monthly_income_expense_12mo.sql"]["rows"]
+        self.assertTrue(any(row["category"] == "TOTAL" for row in comparison_rows))
+        expense_total = next(
+            row for row in comparison_rows
+            if row["measure"] == "expense" and row["category"] == "TOTAL"
+        )
+        self.assertEqual(expense_total["current_month_amount"], 10)
+        self.assertEqual(expense_total["trailing_12_month_average"], round(10 / 12, 2))
+
         cash_rows = results["monthly_cash_outflows_debt_service_6mo.sql"]["rows"]
         self.assertEqual(len(cash_rows), 6)
         latest_cash_month = next(row for row in cash_rows if row["month"] == previous_month_end.strftime("%Y-%m"))
@@ -210,11 +230,18 @@ class LedgerMcpTests(unittest.TestCase):
         self.assertIn("tx_comment", audit_result["columns"])
         self.assertIn("posting_comment", audit_result["columns"])
 
-    def test_context_includes_schema_and_recipes(self) -> None:
+    def test_context_includes_schema_and_recipe_catalog(self) -> None:
         context = json.loads(get_ledger_context())
         self.assertIn("CREATE TABLE accounts", context["schema_guidance"])
-        self.assertIn("cash_flow", context["recipes"])
-        self.assertIn("spending_drift", context["recipes"])
+        self.assertIn("cash_flow", context["recipes_catalog"])
+        self.assertIn("spending_drift", context["recipes_catalog"])
+        self.assertIn("balance_sheet_year_over_year", context["recipes_catalog"])
+        self.assertIn("monthly_income_expense_12mo", context["recipes_catalog"])
+
+    def test_context_can_omit_schema_for_a_compact_response(self) -> None:
+        context = json.loads(get_ledger_context(include_schema=False))
+        self.assertIsNone(context["schema_guidance"])
+        self.assertIn("cash_flow", context["recipes_catalog"])
 
 
 if __name__ == "__main__":
