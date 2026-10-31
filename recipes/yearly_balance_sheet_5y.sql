@@ -1,10 +1,11 @@
 /*
-Year-end Balance Sheet — five completed calendar years
+Year-end Balance Sheet — five-year history and current date
 
 Returns account-level asset/liability balances and year-level totals for the
-five most recently completed year-ends. Balances are cumulative through each
-December 31. The anchor is SQLite 'now'; replace params.first_year with an
-explicit year if reproducibility or a different reporting horizon is desired.
+five most recently completed year-ends, plus the latest date in the ledger (or
+today when the ledger is empty). Balances are cumulative as of each cutoff.
+The anchor is the latest transaction date (or today when the ledger is empty);
+replace params.first_year with an explicit year for a different horizon.
 
 Set target_commodity to the reporting currency used by the journal's P price
 directives (for example '$' or 'USD'). Direct prices are used; there is no
@@ -16,19 +17,28 @@ WITH RECURSIVE
 params AS (
     SELECT
         '$' AS target_commodity,
-        CAST(strftime('%Y', 'now') AS INTEGER) - 5 AS first_year
+        COALESCE(MAX(date), date('now')) AS as_of_date,
+        CAST(strftime('%Y', COALESCE(MAX(date), date('now'))) AS INTEGER) - 5 AS first_year
+    FROM transactions
 ),
 years(year_number) AS (
     SELECT first_year FROM params
     UNION ALL
     SELECT year_number + 1 FROM years
-    WHERE year_number < CAST(strftime('%Y', 'now') AS INTEGER) - 1
+    WHERE year_number < CAST(strftime('%Y', (SELECT as_of_date FROM params)) AS INTEGER)
 ),
 snapshot_dates AS (
     SELECT
         CAST(year_number AS TEXT) AS year,
         date(year_number || '-12-31') AS cutoff_date
     FROM years
+    WHERE date(year_number || '-12-31') <= (SELECT as_of_date FROM params)
+    UNION ALL
+    SELECT
+        strftime('%Y-%m-%d', as_of_date),
+        as_of_date
+    FROM params
+    WHERE strftime('%m-%d', as_of_date) <> '12-31'
 ),
 account_balances AS (
     SELECT
@@ -75,13 +85,14 @@ valued_balances AS (
 ),
 yearly_totals AS (
     SELECT
-        year,
-        SUM(CASE WHEN root_type = 'asset' AND market_value IS NOT NULL THEN market_value ELSE 0 END) AS assets_partial,
-        SUM(CASE WHEN root_type = 'liability' AND market_value IS NOT NULL THEN market_value ELSE 0 END) AS liabilities_signed_partial,
-        SUM(CASE WHEN root_type = 'asset' AND market_value IS NULL THEN 1 ELSE 0 END) AS unpriced_asset_balances,
-        SUM(CASE WHEN root_type = 'liability' AND market_value IS NULL THEN 1 ELSE 0 END) AS unpriced_liability_balances
-    FROM valued_balances
-    GROUP BY year
+        sd.year,
+        SUM(CASE WHEN b.root_type = 'asset' AND b.market_value IS NOT NULL THEN b.market_value ELSE 0 END) AS assets_partial,
+        SUM(CASE WHEN b.root_type = 'liability' AND b.market_value IS NOT NULL THEN b.market_value ELSE 0 END) AS liabilities_signed_partial,
+        SUM(CASE WHEN b.root_type = 'asset' AND b.market_value IS NULL THEN 1 ELSE 0 END) AS unpriced_asset_balances,
+        SUM(CASE WHEN b.root_type = 'liability' AND b.market_value IS NULL THEN 1 ELSE 0 END) AS unpriced_liability_balances
+    FROM snapshot_dates sd
+    LEFT JOIN valued_balances b ON b.year = sd.year
+    GROUP BY sd.year
 )
 SELECT
     sd.year,
